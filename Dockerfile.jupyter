@@ -1,0 +1,55 @@
+# Jupyter-specific Dockerfile with pre-configured kernel
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    JUPYTER_ENABLE_LAB=yes \
+    PIP_CONSTRAINT=/app/constraints.txt 
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    ca-certificates \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY pyproject.toml .
+COPY constraints.txt .  
+
+RUN pip install -c constraints.txt --editable .[dev]
+
+RUN python -c "import certifi; print('REQUESTS_CA_BUNDLE=' + certifi.where())" >> /etc/environment && \
+    python -c "import certifi; print('SSL_CERT_FILE=' + certifi.where())" >> /etc/environment && \
+    python -c "import certifi; print('CURL_CA_BUNDLE=' + certifi.where())" >> /etc/environment
+
+COPY . /app
+
+RUN pip install -c constraints.txt --editable .
+
+COPY setup-jupyter-kernel.sh /tmp/setup-jupyter-kernel.sh
+RUN chmod +x /tmp/setup-jupyter-kernel.sh && /tmp/setup-jupyter-kernel.sh
+
+RUN mkdir -p /app/.dagster_home && \
+    touch /app/.dagster_home/dagster.yaml
+
+RUN mkdir -p /root/.jupyter
+COPY jupyter_lab_config.py /root/.jupyter/jupyter_lab_config.py
+
+RUN echo '#!/bin/bash\n\
+source /etc/environment\n\
+export PYTHONPATH=/app:/app/src:/app/src/demo-business-analytics\n\
+export DAGSTER_HOME=/app/.dagster_home\n\
+export REQUESTS_CA_BUNDLE=$(python -c "import certifi; print(certifi.where())")\n\
+export SSL_CERT_FILE=$(python -c "import certifi; print(certifi.where())")\n\
+export CURL_CA_BUNDLE=$(python -c "import certifi; print(certifi.where())")\n\
+cd /app\n\
+exec jupyter lab --config=/root/.jupyter/jupyter_lab_config.py --no-browser --allow-root "$@"' > /usr/local/bin/start-jupyter.sh && \
+    chmod +x /usr/local/bin/start-jupyter.sh
+
+EXPOSE 8890
+CMD ["/usr/local/bin/start-jupyter.sh"]

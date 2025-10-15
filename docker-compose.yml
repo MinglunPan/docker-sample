@@ -1,0 +1,43 @@
+services:
+  dagster:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - .:/app/.
+    environment:
+      - DAGSTER_HOME=/app/.dagster_home
+      - PYTHONPATH=/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Create dagster home directory and load environment
+    command: >
+      sh -c "mkdir -p /app/.dagster_home && 
+             dagster dev --host 0.0.0.0 --port 3000"
+
+  jupyter:
+    build: .
+    ports:
+      - "8890:8890"
+    env_file:
+      - .env
+    volumes:
+      - ./notebooks:/app/notebooks
+      - ./jupyter_lab_config.py:/app/jupyter_lab_config.py
+      - ./data:/app/data
+    environment:
+      - DAGSTER_HOME=/app/.dagster_home
+      - PYTHONPATH=/app:/app/src:/app/src/demo
+      - JUPYTER_ENABLE_LAB=yes
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - dagster
+    command: >
+      sh -c "mkdir -p /app/.dagster_home && 
+             touch /app/.dagster_home/dagster.yaml &&
+             /tmp/setup-jupyter-kernel.sh &&
+             jupyter lab --config=/app/jupyter_lab_config.py --no-browser --allow-root"
